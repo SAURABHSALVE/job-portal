@@ -29,7 +29,7 @@ jobs:
           CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
           TOKEN_PICKLE_B64: ${{ secrets.TOKEN_PICKLE_B64 }}
           RUN_REMINDERS: "false"
-        run: python job_tracker/cloud_main.py
+        run: cd job_tracker && python cloud_main.py
 
       - name: Fetch Emails & Send Reminders
         if: github.event.schedule == '0 9 * * *'
@@ -38,4 +38,4 @@ jobs:
           CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
           TOKEN_PICKLE_B64: ${{ secrets.TOKEN_PICKLE_B64 }}
           RUN_REMINDERS: "true"
-        run: python job_tracker/cloud_main.py
+        run: cd job_tracker && python cloud_main.py
