@@ -1,0 +1,41 @@
+name: 24/7 Automated Job Tracker
+
+on:
+  schedule:
+    # Run at the top of every hour
+    - cron: '0 * * * *'
+  # Run reminders every day at 09:00 UTC (Modify as needed)
+  - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-tracker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install -r job_tracker/requirements.txt
+
+      - name: Fetch Job Emails
+        if: github.event.schedule != '0 9 * * *'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
+          TOKEN_PICKLE_B64: ${{ secrets.TOKEN_PICKLE_B64 }}
+          RUN_REMINDERS: "false"
+        run: python job_tracker/cloud_main.py
+
+      - name: Fetch Emails & Send Reminders
+        if: github.event.schedule == '0 9 * * *'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
+          TOKEN_PICKLE_B64: ${{ secrets.TOKEN_PICKLE_B64 }}
+          RUN_REMINDERS: "true"
+        run: python job_tracker/cloud_main.py
