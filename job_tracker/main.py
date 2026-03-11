@@ -17,24 +17,22 @@ def process_emails(gmail_reader, email_parser, sheets_manager):
         print("No new emails found.")
         return
 
-    for email_data in emails:
-        print(f"Processing email: '{email_data['subject']}'")
+    for app_data in emails:
+        print(f"Processing email: '{app_data.get('company', 'Unknown')} - {app_data.get('role', 'Unknown')}'")
         
-        # Try to parse application detail from email text
-        result = email_parser.parse_email(email_data)
+        # We process everything as a job application based on the new requirements structure
+        sheets_manager.add_job_application({
+            'company': app_data.get('company', ''),
+            'role': app_data.get('role', ''),
+            'platform': app_data.get('platform', ''),
+            'date_applied': app_data.get('date_applied', ''),
+            'follow_up_date': app_data.get('follow_up_date', ''),
+            'job_link': app_data.get('job_link', '')
+        })
+        print(f"-> Added job application for {app_data.get('company', 'Unknown')}.")
         
-        if result:
-            if result['type'] == 'job':
-                # Add to job sheet
-                sheets_manager.add_job_application(result['data'])
-                print(f"-> Added job application for {result['data']['Company']}.")
-            elif result['type'] == 'freelance':
-                # Add to freelance sheet
-                sheets_manager.add_freelance_proposal(result['data'])
-                print(f"-> Added freelance proposal for {result['data']['Client']}.")
-                
-            # After successful parsing, mark it as read so it isn't parsed again
-            gmail_reader.mark_as_read(email_data['id'])
+        # Mark as read
+        gmail_reader.mark_as_read(app_data['email_id'])
 
 def run_daily_reminders(reminder_service, user_email):
     """

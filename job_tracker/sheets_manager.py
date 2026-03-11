@@ -1,37 +1,44 @@
 import pickle
 import os.path
+import os
+from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import gspread
+from dotenv import load_dotenv
 
-from config import (
-    SCOPES, 
-    SPREADSHEET_ID, 
-    JOB_APPLICATIONS_SHEET, 
-    FREELANCE_PROPOSALS_SHEET
-)
+load_dotenv()
+
+SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+
+# We need these scopes to read and write to Google Sheets and read Gmail
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/spreadsheets'
+]
 
 def get_credentials():
     """
-    Handles Gmail & Sheets API authentication.
-    Prompts the user to log in on the first run, 
-    and saves/refreshes a 'token.pickle' file for subsequent runs.
+    Handles logging into Google. 
+    It will open a browser window the first time you run it.
     """
     creds = None
-    # We use a pickle file to store the credentials when we successfully authenticate
+    # 'token.pickle' stores your login session so you don't have to log in every time
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
             
-    # If no valid token found, we authenticate
+    # If there are no valid credentials, we ask the user to log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # Requires `credentials.json` from the Google Cloud Console
+            # You must have download credentials.json from Google Cloud Console
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=8080)
             
+        # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
             
@@ -39,72 +46,106 @@ def get_credentials():
 
 class SheetsManager:
     """
-    Handles saving extracted job applications and freelance proposals
-    to Google Sheets, and checking for follow ups.
+    Connects to Google Sheets and manages our application rows.
     """
     def __init__(self, creds):
-        # Authorize gspread with the oauth2 credentials
-        self.gc = gspread.authorize(creds)
+        # 1. Connect to Google Sheets using gspread
+        self.client = gspread.authorize(creds)
         
-        # Connect to the specific spreadsheet setup in config.py
-        self.spreadsheet = self.gc.open_by_key(SPREADSHEET_ID)
+        # 2. Open spreadsheet using the ID from .env
+        if not SPREADSHEET_ID:
+            print("Error: SPREADSHEET_ID not found in .env file.")
+            raise ValueError("Missing SPREADSHEET_ID")
+            
+        try:
+            self.spreadsheet = self.client.open_by_key(SPREADSHEET_ID)
+        except gspread.exceptions.SpreadsheetNotFound:
+            print(f"Error: Could not find the spreadsheet with ID: {SPREADSHEET_ID}")
+            print("Please ensure the spreadsheet ID is correct and you have access to it.")
+            raise
+            
+        # Ensure the sheets exist
+        self.job_sheet_name = 'Job Applications'
+        self.freelance_sheet_name = 'Freelance Proposals'
         self.ensure_sheets_exist()
-        
+
     def ensure_sheets_exist(self):
         """Creates the necessary sheets and headers if they're missing."""
         # Setup Job Applications sheet
         try:
-            job_sheet = self.spreadsheet.worksheet(JOB_APPLICATIONS_SHEET)
+            job_sheet = self.spreadsheet.worksheet(self.job_sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            job_sheet = self.spreadsheet.add_worksheet(title=JOB_APPLICATIONS_SHEET, rows="100", cols="20")
+            job_sheet = self.spreadsheet.add_worksheet(title=self.job_sheet_name, rows="100", cols="20")
             headers = ["Company", "Role", "Platform", "Date Applied", "Follow Up Date", "Status", "Job Link", "Notes"]
             job_sheet.append_row(headers)
             
         # Setup Freelance Proposals sheet
         try:
-            freelance_sheet = self.spreadsheet.worksheet(FREELANCE_PROPOSALS_SHEET)
+            freelance_sheet = self.spreadsheet.worksheet(self.freelance_sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            freelance_sheet = self.spreadsheet.add_worksheet(title=FREELANCE_PROPOSALS_SHEET, rows="100", cols="20")
+            freelance_sheet = self.spreadsheet.add_worksheet(title=self.freelance_sheet_name, rows="100", cols="20")
             headers = ["Client", "Platform", "Proposal Date", "Budget", "Status", "Notes"]
             freelance_sheet.append_row(headers)
 
     def add_job_application(self, data):
-        """Appends a new job application row."""
-        sheet = self.spreadsheet.worksheet(JOB_APPLICATIONS_SHEET)
-        # Note: Order matters, must match headers
-        sheet.append_row([
-            data.get('Company', ''),
-            data.get('Role', ''),
-            data.get('Platform', ''),
-            data.get('Date Applied', ''),
-            data.get('Follow Up Date', ''),
-            data.get('Status', 'Applied'),
-            data.get('Job Link', ''),
-            data.get('Notes', '')
-        ])
+        """
+        Appends a new job application row to the 'Job Applications' sheet.
+        """
+        # Open the correct sheet
+        sheet = self.spreadsheet.worksheet(self.job_sheet_name)
+        
+        # We append a row matching our expected columns 
+        # (Company, Role, Platform, Date Applied, Follow Up Date, Status, Job Link, Notes)
+        row_to_add = [
+            data.get('company', ''),
+            data.get('role', ''),
+            data.get('platform', ''),
+            data.get('date_applied', ''),
+            data.get('follow_up_date', ''), # Can be calculated here or passed in data
+            data.get('status', 'Applied'),
+            data.get('job_link', ''),
+            data.get('notes', '')
+        ]
+        
+        # Insert the new row directly at the top (under the headers at row 2)
+        # This prevents it from appending to row 100+ if there are empty formatted rows above.
+        sheet.insert_row(row_to_add, index=2)
 
     def add_freelance_proposal(self, data):
-        """Appends a new freelance proposal row."""
-        sheet = self.spreadsheet.worksheet(FREELANCE_PROPOSALS_SHEET)
-        sheet.append_row([
-            data.get('Client', ''),
-            data.get('Platform', ''),
-            data.get('Proposal Date', ''),
-            data.get('Budget', 'Unknown'),
-            data.get('Status', 'Applied'),
-            data.get('Notes', '')
-        ])
+        """
+        Appends a new freelance proposal row to the 'Freelance Proposals' sheet.
+        """
+        # Open the correct sheet
+        sheet = self.spreadsheet.worksheet(self.freelance_sheet_name)
+        
+        # We append a row matching our expected freelance columns
+        # (Client, Platform, Proposal Date, Budget, Status, Notes)
+        row_to_add = [
+            data.get('client', ''),
+            data.get('platform', ''),
+            data.get('proposal_date', ''),
+            data.get('budget', 'Unknown'),
+            data.get('status', 'Applied'),
+            data.get('notes', '')
+        ]
+        
+        # Insert the new row directly at the top (under the headers at row 2)
+        sheet.insert_row(row_to_add, index=2)
         
     def get_applications_for_followup(self, today_date_str):
-        """Returns rows that need follow-up action today."""
-        sheet = self.spreadsheet.worksheet(JOB_APPLICATIONS_SHEET)
-        records = sheet.get_all_records()
+        """
+        Reads the Job Applications sheet and returns rows where the 
+        'Follow Up Date' matches today's date.
+        """
+        sheet = self.spreadsheet.worksheet(self.job_sheet_name)
         
-        follow_ups = []
-        for row in records:
-            # Use 'Follow Up Date' column string comparison
-            if row.get('Follow Up Date') == today_date_str:
-                if row.get('Status') not in ['Rejected', 'Offer']:
-                    follow_ups.append(row)
-                    
-        return follow_ups
+        # Get all records as a list of dictionaries (keys are header row names)
+        all_records = sheet.get_all_records()
+        
+        due_today = []
+        for row in all_records:
+            # Check if the 'Follow Up Date' column equals today's date
+            if row.get('Follow Up Date', '') == today_date_str:
+                due_today.append(row)
+                
+        return due_today
