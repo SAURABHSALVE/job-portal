@@ -22,6 +22,8 @@ from main import process_emails, run_daily_reminders
 
 def run_cloud():
     print("=== Starting Cloud Job Tracker ===")
+    sid = os.getenv('SPREADSHEET_ID', '')
+    print(f"SPREADSHEET_ID length: {len(sid)}, first 4 chars: {sid[:4]}, last 4 chars: {sid[-4:]}")
     
     creds = get_credentials()
     sheets_manager = SheetsManager(creds)
