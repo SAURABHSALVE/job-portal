@@ -36,7 +36,7 @@ def get_credentials():
         else:
             # You must have download credentials.json from Google Cloud Console
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=8080)
+            creds = flow.run_local_server(port=8080, prompt='consent')
             
         # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
