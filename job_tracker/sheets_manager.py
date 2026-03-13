@@ -33,6 +33,11 @@ def get_credentials():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+        elif os.getenv('CI') or os.getenv('GITHUB_ACTIONS'):
+            raise RuntimeError(
+                "Token is missing or expired and cannot be refreshed in CI. "
+                "Please regenerate token.pickle locally and update the TOKEN_PICKLE_B64 secret."
+            )
         else:
             # You must have download credentials.json from Google Cloud Console
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
